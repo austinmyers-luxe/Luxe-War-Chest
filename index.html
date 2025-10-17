@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Luxe War Chest – Profit Game</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="theme-color" content="#0b0b0c"/>
+<style>
+  body { font-family: Arial, sans-serif; margin: 24px; background:#0b0b0c; color:#f5f5f5; }
+  .card { background:#141417; border-radius:16px; padding:20px; margin-bottom:16px; box-shadow:0 8px 20px rgba(0,0,0,0.25);}
+  h1 { margin-top:0; }
+  label { display:block; margin:8px 0 4px; opacity:0.9; }
+  input, button, select { padding:10px; border-radius:10px; border:1px solid #333; background:#0f0f12; color:#f5f5f5; }
+  input::placeholder { color:#888; }
+  button { cursor:pointer; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:12px; }
+  .progress-wrap { background:#0f0f12; border-radius:14px; padding:12px; }
+  .progress-bar { height:22px; background:#1f2937; border-radius:12px; overflow:hidden; }
+  .progress-fill { height:100%; width:0%; background:linear-gradient(90deg,#FFD700,#AA8D00); transition:width .3s ease; }
+  .row { display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
+  .badge { background:#1f2937; padding:6px 10px; border-radius:999px; font-size:12px; }
+  .table { width:100%; border-collapse:collapse; margin-top:12px; }
+  .table th, .table td { border-bottom:1px solid #2a2a2e; padding:8px; text-align:left; }
+  .right { text-align:right; }
+  .gold { color:#FFD700; }
+  .muted { color:#aaa; font-size:12px; }
+  .spacer { height:8px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>💰 Luxe War Chest – Profit Game</h1>
+    <div class="grid">
+      <div><label>Reserve Goal ($)</label><input type="number" id="goal" value="6000" min="0" step="100"/></div>
+      <div><label>Current Reserve ($)</label><input type="number" id="reserve" value="0" min="0" step="10"/></div>
+      <div><label>Allocation – Taxes %</label><input type="number" id="pctTaxes" value="15" min="0" max="100" step="1"/></div>
+      <div><label>Allocation – Owners Comp %</label><input type="number" id="pctOwners" value="20" min="0" max="100" step="1"/></div>
+      <div><label>Allocation – OpEx %</label><input type="number" id="pctOpEx" value="50" min="0" max="100" step="1"/></div>
+      <div><label>Allocation – Profit/Reserves %</label><input type="number" id="pctProfit" value="15" min="0" max="100" step="1"/></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="row">
+      <button id="saveCfg">Save Config</button>
+      <span class="muted">Tip: Split must sum to 100%</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Add Deposit</h2>
+    <div class="grid">
+      <div><label>Amount ($)</label><input type="number" id="depAmt" min="0" step="1" placeholder="e.g., 1000"/></div>
+      <div><label>Client/Job</label><input type="text" id="depJob" placeholder="e.g., F150 Ceramic"/></div>
+      <div><label>Date</label><input type="date" id="depDate"/></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="row">
+      <button id="allocBtn">Allocate Deposit</button>
+      <button id="resetBtn">Reset Ledger</button>
+    </div>
+  </div>
+
+  <div class="card progress-wrap">
+    <div class="row" style="justify-content:space-between">
+      <div><strong>War Chest Progress</strong></div>
+      <div><span class="badge"><span id="pctLabel">0%</span></span></div>
+    </div>
+    <div class="progress-bar" style="margin-top:8px;">
+      <div class="progress-fill" id="progress"></div>
+    </div>
+    <div class="row" style="justify-content:space-between; margin-top:8px;">
+      <div class="muted">Milestone: <span id="milestone">Not yet</span></div>
+      <div class="gold"><span id="reserveLabel">$0</span> / <span id="goalLabel">$6,000</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Ledger</h2>
+    <table class="table" id="ledger">
+      <thead>
+        <tr>
+          <th>Date</th><th>Client/Job</th>
+          <th class="right">Deposit</th><th class="right">Taxes</th>
+          <th class="right">Owners</th><th class="right">OpEx</th>
+          <th class="right">Profit</th><th class="right">Reserve</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Backup & Restore</h2>
+    <div class="row">
+      <button id="backupBtn">Backup to File (.json)</button>
+      <input type="file" id="restoreFile" accept=".json" style="display:none"/>
+      <button id="restoreBtn">Restore from File</button>
+      <button id="exportCsvBtn">Export Ledger (.csv)</button>
+    </div>
+    <p class="muted">Backups include your config + ledger. Restoring will overwrite current data.</p>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
+
+function loadCfg() {
+  const cfg = JSON.parse(localStorage.getItem("luxe_cfg") || "{}");
+  if (cfg.goal!=null) $('goal').value = cfg.goal;
+  if (cfg.reserve!=null) $('reserve').value = cfg.reserve;
+  if (cfg.pctTaxes!=null) $('pctTaxes').value = cfg.pctTaxes;
+  if (cfg.pctOwners!=null) $('pctOwners').value = cfg.pctOwners;
+  if (cfg.pctOpEx!=null) $('pctOpEx').value = cfg.pctOpEx;
+  if (cfg.pctProfit!=null) $('pctProfit').value = cfg.pctProfit;
+}
+
+function saveCfg() {
+  const cfg = {
+    goal: Number($('goal').value||0),
+    reserve: Number($('reserve').value||0),
+    pctTaxes: Number($('pctTaxes').value||0),
+    pctOwners: Number($('pctOwners').value||0),
+    pctOpEx: Number($('pctOpEx').value||0),
+    pctProfit: Number($('pctProfit').value||0),
+  };
+  if (cfg.pctTaxes + cfg.pctOwners + cfg.pctOpEx + cfg.pctProfit !== 100) {
+    alert("Your allocations must sum to 100%");
+    return;
+  }
+  localStorage.setItem("luxe_cfg", JSON.stringify(cfg));
+  updateProgress();
+}
+
+function loadLedger() { return JSON.parse(localStorage.getItem("luxe_ledger") || "[]"); }
+function saveLedger(rows) { localStorage.setItem("luxe_ledger", JSON.stringify(rows)); }
+
+function addRow(row) {
+  const tb = document.querySelector("#ledger tbody");
+  const tr = document.createElement("tr");
+  ["date","job","deposit","taxes","owners","opex","profit","reserve"].forEach(k=>{
+    const td = document.createElement("td");
+    if (["deposit","taxes","owners","opex","profit","reserve"].includes(k)) td.className="right";
+    td.textContent = (["deposit","taxes","owners","opex","profit","reserve"].includes(k)) ? "$"+fmt(row[k]) : row[k];
+    tr.appendChild(td);
+  });
+  tb.prepend(tr);
+}
+
+function renderLedger() {
+  const tb = document.querySelector("#ledger tbody");
+  tb.innerHTML = "";
+  const rows = loadLedger();
+  rows.forEach(addRow);
+}
+
+function updateProgress() {
+  const cfg = JSON.parse(localStorage.getItem("luxe_cfg") || "{}");
+  const rows = loadLedger();
+  let reserve = Number(cfg.reserve||0);
+  if (rows.length) reserve = rows[rows.length-1].reserve;
+  const goal = Number(cfg.goal||0) || 1;
+  const pct = Math.min(1, reserve/goal);
+  $('progress').style.width = Math.round(pct*100) + "%";
+  $('pctLabel').textContent = Math.round(pct*100) + "%";
+  $('reserveLabel').textContent = "$"+fmt(reserve);
+  $('goalLabel').textContent = "$"+fmt(goal);
+  let m = "Not yet";
+  if (pct >= 1) m = "Level 4 (Goal Met)";
+  else if (pct >= 0.75) m = "Level 3 (75%)";
+  else if (pct >= 0.50) m = "Level 2 (50%)";
+  else if (pct >= 0.25) m = "Level 1 (25%)";
+  $('milestone').textContent = m;
+}
+
+function allocateDeposit() {
+  const cfg = JSON.parse(localStorage.getItem("luxe_cfg") || "{}");
+  const amt = Number($('depAmt').value||0);
+  if (!amt || amt<=0) { alert("Enter a valid deposit amount"); return; }
+  if ((cfg.pctTaxes + cfg.pctOwners + cfg.pctOpEx + cfg.pctProfit) !== 100) { alert("Your allocations must sum to 100%"); return; }
+  const date = $('depDate').value || new Date().toISOString().slice(0,10);
+  const job = $('depJob').value || "Job";
+  const taxes = amt * cfg.pctTaxes/100;
+  const owners = amt * cfg.pctOwners/100;
+  const opex = amt * cfg.pctOpEx/100;
+  const profit = amt * cfg.pctProfit/100;
+
+  const rows = loadLedger();
+  let lastReserve = Number(JSON.parse(localStorage.getItem("luxe_cfg")||"{}").reserve||0);
+  if (rows.length) lastReserve = rows[rows.length-1].reserve;
+  const newReserve = lastReserve + profit;
+
+  const row = {date, job, deposit: amt, taxes, owners, opex, profit, reserve: newReserve};
+  rows.push(row); saveLedger(rows); renderLedger(); updateProgress();
+
+  const pct = newReserve / ((JSON.parse(localStorage.getItem("luxe_cfg")||"{}").goal)||1);
+  if (pct >= 1) alert("🏆 Level 4 Unlocked! Goal Met – Reward time (without touching the $6k floor).");
+  else if (pct >= 0.75) alert("🎉 Level 3 Unlocked – 75% milestone!");
+  else if (pct >= 0.50) alert("🎉 Level 2 Unlocked – Halfway there!");
+  else if (pct >= 0.25) alert("🎉 Level 1 Unlocked – First milestone!");
+}
+
+function resetLedger() { if (confirm("Reset ledger? This will clear all deposit history.")) { saveLedger([]); renderLedger(); updateProgress(); } }
+</script>
+</body>
+</html>
