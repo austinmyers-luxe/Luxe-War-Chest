@@ -100,7 +100,7 @@
     <p class="muted">Backups include your config + ledger. Restoring will overwrite current data.</p>
   </div>
 
-<script>
+
 const $ = (id) => document.getElementById(id);
 const fmt = (n) => Number(n).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2});
 
@@ -200,6 +200,7 @@ function allocateDeposit() {
 }
 
 function resetLedger() { if (confirm("Reset ledger? This will clear all deposit history.")) { saveLedger([]); renderLedger(); updateProgress(); } }
-</script>
+<script src="./app.js" defer></script>
+
 </body>
 </html>
